@@ -1,0 +1,6 @@
+*.egg*
+*.vim
+bin/
+build/
+temp/
+venv/

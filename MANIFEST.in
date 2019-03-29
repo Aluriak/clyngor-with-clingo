@@ -1,0 +1,6 @@
+include MANIFEST.in README.mkd
+recursive-include clyngor_with_clingo *.py
+prune clyngor_with_clingo/bin
+#include clyngor_with_clingo/bin/linux/clingo
+#include clyngor_with_clingo/bin/macos/clingo
+#include clyngor_with_clingo/bin/win/clingo.exe
