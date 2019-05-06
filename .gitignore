@@ -1,5 +1,6 @@
 *.egg*
 *.vim
+__pycache__/
 bin/
 build/
 temp/
