@@ -4,12 +4,40 @@ so the end-user will not have to care about the clingo installation.
 
 The clingo binary is taken for Linux, OSX and Windows on [the official release page](https://github.com/potassco/clingo/releases/)
 
-Script `retrieve-clingo.sh <clingo version>` will automatically retrieve the given clingo version.
-Script `put-clingo-version.sh <clingo version>` will automatically push the given clingo version into the package.
+# Installation
+When someone (who doesn't understand "install clingo binary in your path") have to install clyngor, give them that line instead:
+
+    pip install clyngor-with-clingo
+
+A clingo executable will appear in their `bin`. May need root access if the said someone is working at system level.
 
 
-## How to embed a platform-specific binary into a python package
+## Maintenance
+The package must be updated to use new clingo binaries.
 
+- Script `retrieve-clingo.sh <clingo version>` will automatically retrieve the given clingo version.
+- Script `put-clingo-version.sh <clingo version>` will automatically push the given clingo version into the package.
+
+Use [zest.releaser](https://zestreleaser.readthedocs.io) to upload new versions ; be careful to **match clingo version with package version**.
+
+
+
+# How to perform this magic
+
+## The current solution: faking clingo as a python script
+[Link to the way of doing that](https://stackoverflow.com/questions/24686838/distributing-a-binary-utility-in-setuptools). Thanks !
+
+I end up [reproducing the same entry point implementation, using pkg_resource](clyngor_with_clingo/__init__.py), and it works:
+binaries are embedded in the package using the [MANIFEST.in](MANIFEST.in), and the package only real operation
+is to delegate command line arguments to the proper clingo binary.
+
+
+## The on-the-fly solution: hack upon setuptools to download binary at installation
+Method used by [pyasp](https://github.com/sthiele/pyasp/blob/master/setup.py#L136).
+Has a lot of drawbacks, such as binary downloading from the client side, and necessity to use `--no-cache-dir` pip flag to force pip to execute the hack.
+
+
+## The proper but non-working solution: embed a platform-specific binary into a python package
 The python part of the package is simplistic (well, there could be **no** python in this package),
 be [we still need a basic architecture](https://stackoverflow.com/questions/12461603/setting-up-setup-py-for-packaging-of-a-single-py-file-and-a-single-data-file-wi).
 
@@ -25,7 +53,6 @@ with [setuptools](https://github.com/pypa/setuptools/pull/1520):
         bin/macos/clingo; platform_system=="Darwin"
         bin/win/clingo.exe; platform_system=="Windows"
 
-But it does not works. [A question has been asked about it](https://github.com/pypa/setuptools/issues/1728).
+But it does not works. [A question has been asked about it](https://github.com/pypa/setuptools/issues/1728), also [on SO](https://stackoverflow.com/q/56004271/3077939).
 
-
-[Link to an alternative way of doing all that crap](https://stackoverflow.com/questions/24686838/distributing-a-binary-utility-in-setuptools)
+Probably it's because data_files does not support environment markers. Hence this solution has been abandonned.

@@ -15,9 +15,9 @@ CLINGO_VERSION=$1
 BINDIR="temp/bin-${CLINGO_VERSION}"
 
 echo "Moving binaries to the package…"
-cp "${BINDIR}/win/clingo.exe" bin/win/
-cp "${BINDIR}/linux/clingo" bin/linux/
-cp "${BINDIR}/macos/clingo" bin/macos/
+mv "${BINDIR}/win/clingo.exe" clyngor_with_clingo/bin/win/
+mv "${BINDIR}/linux/clingo" clyngor_with_clingo/bin/linux/
+mv "${BINDIR}/macos/clingo" clyngor_with_clingo/bin/macos/
 echo "Done!"
 echo ""
 
