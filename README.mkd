@@ -31,9 +31,15 @@ I end up [reproducing the same entry point implementation, using pkg_resource](c
 binaries are embedded in the package using the [MANIFEST.in](MANIFEST.in), and the package only real operation
 is to delegate command line arguments to the proper clingo binary.
 
+This seems to work, but:
+
+- user has not control over the installed binary (however that package is all about having the user to not have to cope with that, but still… Experienced users should never use it)
+- the 3 binaries are sent to the user, and the choice is made at execution time.
+
 
 ## The on-the-fly solution: hack upon setuptools to download binary at installation
 Method used by [pyasp](https://github.com/sthiele/pyasp/blob/master/setup.py#L136).
+
 Has a lot of drawbacks, such as binary downloading from the client side, and necessity to use `--no-cache-dir` pip flag to force pip to execute the hack.
 
 
