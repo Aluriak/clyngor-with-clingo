@@ -3,5 +3,6 @@
 __pycache__/
 bin/
 build/
+dist/
 temp/
 venv/
