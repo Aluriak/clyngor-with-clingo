@@ -3,3 +3,5 @@ recursive-include clyngor_with_clingo *.py
 include clyngor_with_clingo/bin/linux/clingo
 include clyngor_with_clingo/bin/macos/clingo
 include clyngor_with_clingo/bin/win/clingo.exe
+exclude *.sh
+exclude Makefile
