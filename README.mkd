@@ -61,4 +61,4 @@ with [setuptools](https://github.com/pypa/setuptools/pull/1520):
 
 But it does not works. [A question has been asked about it](https://github.com/pypa/setuptools/issues/1728), also [on SO](https://stackoverflow.com/q/56004271/3077939).
 
-Probably it's because data_files does not support environment markers. Hence this solution has been abandonned.
+Probably it's because data_files does not support environment markers. Hence this solution has been abandoned.
