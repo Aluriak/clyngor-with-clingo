@@ -38,6 +38,7 @@ fi
 if [[ -f "${DIR_CLINGO_WIN}/clingo.exe" ]]
 then
     mv "${DIR_CLINGO_WIN}/clingo.exe" ./"${BINDIR}"/win
+    chmod 711 ./"${BINDIR}"/win/clingo.exe
 fi
 echo "Done!"
 echo ""
@@ -55,6 +56,7 @@ fi
 if [[ -f "${DIR_CLINGO_LNX}/clingo" ]]
 then
     mv "${DIR_CLINGO_LNX}/clingo" ./"${BINDIR}"/linux
+    chmod 711 ./"${BINDIR}"/linux/clingo
 fi
 echo "Done!"
 echo ""
@@ -72,6 +74,7 @@ fi
 if [[ -f "${DIR_CLINGO_MAC}/clingo" ]]
 then
     mv "${DIR_CLINGO_MAC}/clingo" ./"${BINDIR}"/macos
+    chmod 711 ./"${BINDIR}"/macos/clingo
 fi
 echo "Done!"
 echo ""
