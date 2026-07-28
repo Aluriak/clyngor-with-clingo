@@ -8,7 +8,7 @@ here implemented using subprocess.
 import sys
 import platform
 import subprocess
-import pkg_resources
+from pathlib import Path
 
 system = platform.system()
 if platform.system() == 'Linux':
@@ -19,6 +19,8 @@ elif platform.system() == 'Windows':
     binpath = 'win/clingo.exe'
 else:
     raise SystemError(f"System '{system}' is not supported.")
-fname = pkg_resources.resource_filename(__name__, 'bin/' + binpath)
+fname = str(Path(__file__).resolve().parent / 'bin' / binpath)
+
+
 def run_clingo():
     subprocess.call([fname] + sys.argv[1:])
