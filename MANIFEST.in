@@ -1,7 +1,6 @@
 include MANIFEST.in README.mkd
 recursive-include clyngor_with_clingo *.py
-include clyngor_with_clingo/bin/linux/clingo
-include clyngor_with_clingo/bin/macos/clingo
-include clyngor_with_clingo/bin/win/clingo.exe
+recursive-include clyngor_with_clingo/bin *
 exclude *.sh
 exclude Makefile
+exclude fetch_clingo.py

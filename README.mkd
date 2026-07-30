@@ -15,8 +15,24 @@ A clingo executable will appear in their `bin`. May need root access if the said
 ## Maintenance
 The package must be updated to use new clingo binaries.
 
-- Script `retrieve-clingo.sh <clingo version>` will automatically retrieve the given clingo version.
-- Script `put-clingo-version.sh <clingo version>` will automatically push the given clingo version into the package.
+Since clingo 5.4.0, potassco no longer publishes prebuilt per-OS binaries on
+the [clingo GitHub releases page](https://github.com/potassco/clingo/releases)
+(source tarballs only). For clingo **> 5.4.0**, binaries are instead fetched
+from [conda-forge](https://github.com/conda-forge/clingo-feedstock), which
+still builds and publishes real Linux/macOS/Windows binaries for every
+release, and made relocatable (no conda environment needed at runtime) by
+`fetch_clingo.py`:
+
+    python fetch_clingo.py <clingo version> [conda-executable]
+
+This must run once per OS (see `.github/workflows/build-binaries.yml`, which
+does exactly that on GitHub-hosted Linux/macOS/Windows runners and
+smoke-tests each binary natively, including a `#script (python)` block).
+Note: the conda-forge build has Python scripting support but not Lua.
+
+- Script `retrieve-clingo.sh <clingo version>` / `put-clingo-version.sh <clingo version>`
+  are kept only for rebuilding older versions (**<= 5.4.0**), back when
+  potassco still shipped prebuilt archives on GitHub releases.
 
 Use [zest.releaser](https://zestreleaser.readthedocs.io) to upload new versions ; be careful to **match clingo version with package version**.
 

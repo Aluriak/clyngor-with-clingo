@@ -1,0 +1,61 @@
+name: Build clingo binaries
+
+# Fetches a self-contained clingo binary (from conda-forge, since potassco
+# stopped publishing prebuilt per-OS binaries on GitHub releases after
+# clingo 5.4.0) for each supported OS, smoke-tests it natively, and uploads
+# it as a build artifact. Used standalone (workflow_dispatch, to validate a
+# clingo version before release) and as a reusable workflow from the
+# release pipeline.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clingo_version:
+        description: 'clingo version to fetch (must exist on conda-forge)'
+        required: true
+        default: '5.8.0'
+  workflow_call:
+    inputs:
+      clingo_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: fetch clingo ${{ inputs.clingo_version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform_dir: linux
+          - os: macos-13
+            platform_dir: macos
+          - os: windows-latest
+            platform_dir: win
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install patchelf (Linux only, for rpath relocation)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y patchelf
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: clingo-fetch-bootstrap
+          create-args: python=3.11
+
+      - name: Fetch and relocate clingo binary
+        shell: bash -l {0}
+        run: python fetch_clingo.py "${{ inputs.clingo_version }}" micromamba
+
+      - name: Show what we got
+        shell: bash -l {0}
+        run: ls -la "clyngor_with_clingo/bin/${{ matrix.platform_dir }}/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clingo-binaries-${{ matrix.platform_dir }}
+          path: clyngor_with_clingo/bin/${{ matrix.platform_dir }}/
