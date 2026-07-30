@@ -49,6 +49,18 @@ def env_prefix(conda):
     raise RuntimeError(f"could not find prefix of conda env {ENV_NAME!r} in:\n{out}")
 
 
+def bundle_python_home(prefix, outdir):
+    """Copy conda's lib/pythonX.Y/ (stdlib, lib-dynload, site-packages with
+    _cffi_backend) so PYTHONHOME=outdir works standalone. Without this, the
+    embedded interpreter has no stdlib to import (not even `encodings`), and
+    -- worse -- CPython's path-search heuristic can silently wander off and
+    pick up an unrelated Python installation found elsewhere on the host.
+    """
+    pylibdir = next((prefix / 'lib').glob('python3.*'))
+    ignore = shutil.ignore_patterns('__pycache__', '*.pyc')
+    shutil.copytree(pylibdir, outdir / 'lib' / pylibdir.name, ignore=ignore, dirs_exist_ok=True)
+
+
 def relocate_linux(prefix, outdir):
     outdir.mkdir(parents=True, exist_ok=True)
     binary = prefix / 'bin' / 'clingo'
@@ -67,6 +79,7 @@ def relocate_linux(prefix, outdir):
             # (libc, libpthread, libm...) are assumed present everywhere.
             shutil.copy2(libpath, outdir / os.path.basename(libpath))
     sh('patchelf', '--set-rpath', '$ORIGIN', str(outdir / 'clingo'))
+    bundle_python_home(prefix, outdir)
 
 
 def relocate_macos(prefix, outdir):
@@ -85,17 +98,49 @@ def relocate_macos(prefix, outdir):
             changes += ['-change', libpath, f'@loader_path/{libname}']
     if changes:
         sh('install_name_tool', *changes, str(outdir / 'clingo'))
+    bundle_python_home(prefix, outdir)
 
 
 def relocate_windows(prefix, outdir):
     outdir.mkdir(parents=True, exist_ok=True)
-    # conda-forge's windows build puts binaries/DLLs under Library/bin;
-    # Windows resolves DLLs from the executable's own folder by default,
-    # so co-locating everything from there is enough, no patching needed.
+    # conda-forge's windows build puts clingo.exe/clingo.dll under
+    # Library/bin; Windows resolves DLLs from the executable's own folder
+    # by default, so co-locating those is enough on its own. But clingo's
+    # embedded Python scripting needs a full, working Python: the stdlib
+    # (Lib/), compiled extension modules (DLLs/), the python DLL itself,
+    # and cffi's _cffi_backend (used to bridge into libclingo). Without an
+    # explicit *_pth file, CPython's path-search heuristic can wander off
+    # and pick up an unrelated Python installation from the host machine
+    # instead of the one bundled here (this is exactly what happened when
+    # this was first tried on a GitHub Actions runner: it silently loaded
+    # AWS CLI's bundled Python and failed to find `_cffi_backend`).
     libdir = prefix / 'Library' / 'bin'
     shutil.copy2(libdir / 'clingo.exe', outdir / 'clingo.exe')
     for dll in glob.glob(str(libdir / '*.dll')):
         shutil.copy2(dll, outdir / os.path.basename(dll))
+
+    python_dll = next(prefix.glob('python3*.dll'))
+    shutil.copy2(python_dll, outdir / python_dll.name)
+
+    ignore = shutil.ignore_patterns('__pycache__', '*.pyc')
+    shutil.copytree(prefix / 'Lib', outdir / 'Lib', ignore=ignore, dirs_exist_ok=True)
+    shutil.copytree(prefix / 'DLLs', outdir / 'DLLs', ignore=ignore, dirs_exist_ok=True)
+
+    # pin sys.path to only the bundled locations, ignoring the registry,
+    # PATH, and any other Python install found on the host machine.
+    pth_name = python_dll.stem + '._pth'  # e.g. python314._pth
+    (outdir / pth_name).write_text('Lib\nLib\\site-packages\nDLLs\n.\n\nimport site\n')
+
+
+def runtime_env(outdir):
+    """The env clingo needs at runtime: same as what run_clingo() in
+    clyngor_with_clingo/__init__.py sets up, so the smoke test here
+    actually exercises the real runtime path."""
+    env = dict(os.environ)
+    env.pop('PYTHONPATH', None)
+    if platform.system() in ('Linux', 'Darwin'):
+        env['PYTHONHOME'] = str(outdir)
+    return env
 
 
 def smoke_test(outdir, exe):
@@ -110,7 +155,7 @@ def smoke_test(outdir, exe):
     )
     out = subprocess.run(
         [str(outdir / exe), str(script), '0'],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=runtime_env(outdir),
     )
     script.unlink()
     if 'SMOKE_TEST_MODEL: a b' not in out.stdout:
