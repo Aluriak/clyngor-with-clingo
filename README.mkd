@@ -2,7 +2,11 @@
 This is a python package installing a clingo binary along the [clyngor package](https://github.com/aluriak/clyngor),
 so the end-user will not have to care about the clingo installation.
 
-The clingo binary is taken for Linux, OSX and Windows on [the official release page](https://github.com/potassco/clingo/releases/)
+The clingo binary is built for Linux, macOS and Windows by
+[conda-forge](https://github.com/conda-forge/clingo-feedstock), and made
+relocatable so it runs with no conda environment around (see
+[maintenance](#maintenance) for why it is no longer taken from clingo's own
+release page).
 
 # Installation
 When someone (who doesn't understand "install clingo binary in your path") have to install clyngor, give them that line instead:
@@ -10,6 +14,42 @@ When someone (who doesn't understand "install clingo binary in your path") have 
     pip install clyngor-with-clingo
 
 A clingo executable will appear in their `bin`. May need root access if the said someone is working at system level.
+
+
+## Python inside your ASP
+
+The shipped binary supports `#script (python)` blocks. It runs them with its
+**own private Python**, bundled next to it — not the Python you installed the
+package with. That interpreter has the standard library and what clingo itself
+needs, and nothing else.
+
+So a script can do this:
+
+```
+#script (python)
+from clingo.symbol import Number
+def double(x):
+    return Number(x.number * 2)
+#end.
+a(1..3).
+b(@double(X)):- a(X).
+```
+
+but it cannot `import` anything you installed for your own Python — **clyngor
+included**. Anything in clyngor built on running python *inside* the solver
+(the [propagators](https://github.com/aluriak/clyngor#generalist-propagators)
+and the [`converted_types` decorators](https://github.com/aluriak/clyngor#easy-asp-functors),
+which all start with `import clyngor` in the embedded script) therefore does
+not work through this binary.
+
+Two ways out, if you need those:
+
+- solve through the **clingo python module** (`pip install clingo`, then
+  `clyngor.solve(..., solver=clyngor.Solver(backend='module'))`). Embedded
+  scripts then run in *your* interpreter, so they can import whatever you have
+  installed. This is how clyngor tests those features.
+- install a clingo binary built against your own Python (a system package, or
+  conda in your own environment) instead of this one.
 
 
 ## Maintenance
@@ -31,7 +71,9 @@ smoke-tests each binary natively, including a `#script (python)` block).
 Notes on the fetched binaries:
 
 - Python scripting (`#script (python)`) is supported, with the needed
-  Python runtime bundled alongside the binary; Lua is not.
+  Python runtime bundled alongside the binary; Lua is not. That runtime is
+  private to the binary, which is what limits embedded scripts to the
+  standard library — see [Python inside your ASP](#python-inside-your-asp).
 - `sqlite3` and `tkinter` are pruned from the bundled Python runtime
   (their native deps are huge and pointless inside an ASP solver).
 - Releases publish **one platform-tagged wheel per OS/arch** (Linux
@@ -43,7 +85,17 @@ Notes on the fetched binaries:
   are kept only for rebuilding older versions (**<= 5.4.0**), back when
   potassco still shipped prebuilt archives on GitHub releases.
 
-Use [zest.releaser](https://zestreleaser.readthedocs.io) to upload new versions ; be careful to **match clingo version with package version**.
+Releasing is done by pushing a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+runs `.github/workflows/python-publish.yml`, which rebuilds the binaries on all
+four targets, refuses to publish any binary under 100 KB, and uploads the
+wheels to PyPI.
+
+The **package version always equals the clingo version it ships**, and the tag
+names both. To re-release the same clingo (a packaging fix, say), keep that
+equality by adding a PEP 440 post segment — `v5.8.0.post1`, as `5.3.post0` and
+`5.3.post1` already did — rather than bumping to 5.8.1, which would claim a
+clingo that is not in the wheel. The workflow drops that segment to know what
+to fetch from conda-forge, and refuses a tag that disagrees with `setup.cfg`.
 
 
 

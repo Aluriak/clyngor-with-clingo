@@ -61,6 +61,16 @@ smoke-tests each binary natively with an embedded `#script (python)`.
   would blow past PyPI's 100 MB per-file limit; an sdist would install with
   no binaries at all.
 - **conda-forge builds have python scripting but no Lua.**
+- **The bundled interpreter is private, and that is a user-visible limit.**
+  Embedded scripts get the standard library and nothing else — they cannot
+  import packages installed for the *host* python, clyngor included. So
+  clyngor's propagators and `converted_types` decorators, which all begin
+  with `import clyngor` inside the script, do not work through this binary;
+  they need the clingo *module* backend, which runs scripts in the host
+  interpreter. Documented in the README under "Python inside your ASP".
+  Three tests in clyngor's `test_propagator_class.py` fail against this
+  binary for that reason — they had never run before, no available binary
+  having had python support.
 - `macos-13` was retired by GitHub on 2025-12-04 — jobs targeting it queue
   forever. macOS runners are arm64 now; x86_64 lives on as `macos-15-intel`
   until fall 2027.
