@@ -48,47 +48,58 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: clingo-binaries-linux
-          path: clyngor_with_clingo/bin/linux/
+          path: artifacts/linux/
 
       - uses: actions/download-artifact@v4
         with:
           name: clingo-binaries-macos-arm64
-          path: clyngor_with_clingo/bin/macos-arm64/
+          path: artifacts/macos-arm64/
 
       - uses: actions/download-artifact@v4
         with:
           name: clingo-binaries-macos-x64
-          path: clyngor_with_clingo/bin/macos-x64/
+          path: artifacts/macos-x64/
 
       - uses: actions/download-artifact@v4
         with:
           name: clingo-binaries-win
-          path: clyngor_with_clingo/bin/win/
+          path: artifacts/win/
 
-      - name: Fail if any binary is missing or suspiciously small
-        # Regression guard: this is exactly what let empty placeholder
-        # binaries get published as v5.4.0 (see issue #5).
+      - name: Build one wheel per platform
+        # One platform-tagged wheel each, instead of a single fat wheel:
+        # each stays well under PyPI's 100 MB per-file limit, and users
+        # only download binaries for their own OS. The size check on each
+        # binary is the regression guard for the v5.4.0 incident (empty
+        # placeholder binaries published to PyPI, see issue #5). No sdist:
+        # a source install would have no binaries at all.
         run: |
           set -e
-          chmod +x clyngor_with_clingo/bin/linux/clingo \
-                   clyngor_with_clingo/bin/macos-arm64/clingo \
-                   clyngor_with_clingo/bin/macos-x64/clingo
-          for f in clyngor_with_clingo/bin/linux/clingo \
-                   clyngor_with_clingo/bin/macos-arm64/clingo \
-                   clyngor_with_clingo/bin/macos-x64/clingo \
-                   clyngor_with_clingo/bin/win/clingo.exe; do
-            size=$(stat -c%s "$f")
-            echo "$f: $size bytes"
+          python -m pip install build
+          declare -A plat=(
+            [linux]=manylinux2014_x86_64
+            [macos-arm64]=macosx_11_0_arm64
+            [macos-x64]=macosx_10_13_x86_64
+            [win]=win_amd64
+          )
+          for p in linux macos-arm64 macos-x64 win; do
+            rm -rf clyngor_with_clingo/bin
+            mkdir -p "clyngor_with_clingo/bin/$p"
+            cp -r "artifacts/$p/." "clyngor_with_clingo/bin/$p/"
+            exe="clyngor_with_clingo/bin/$p/clingo"
+            [ "$p" = win ] && exe="$exe.exe"
+            chmod +x "$exe"
+            size=$(stat -c%s "$exe")
+            echo "$exe: $size bytes"
             if [ "$size" -lt 100000 ]; then
-              echo "::error::$f is only $size bytes, refusing to publish a broken binary"
+              echo "::error::$exe is only $size bytes, refusing to publish a broken binary"
               exit 1
             fi
+            cp setup.cfg setup.cfg.orig
+            printf '\n[bdist_wheel]\nplat_name = %s\n' "${plat[$p]}" >> setup.cfg
+            python -m build --wheel
+            mv setup.cfg.orig setup.cfg
           done
-
-      - name: Build release distributions
-        run: |
-          python -m pip install build
-          python -m build
+          ls -lh dist/
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4

@@ -12,6 +12,7 @@ Usage: python fetch_clingo.py <clingo-version> [conda-executable]
 
 """
 import os
+import re
 import sys
 import glob
 import shutil
@@ -49,6 +50,19 @@ def env_prefix(conda):
     raise RuntimeError(f"could not find prefix of conda env {ENV_NAME!r} in:\n{out}")
 
 
+# Pruned from the bundled python home: nothing an embedded #script (python)
+# block can reasonably need, and tens of MB that would push the final wheel
+# over PyPI's 100 MB per-file limit.
+PYTHON_HOME_PRUNE = (
+    '__pycache__', '*.pyc', 'test', 'tests', 'idlelib', 'turtledemo',
+    'tkinter', 'ensurepip', 'pydoc_data', 'pip', 'setuptools', 'wheel',
+    'pkg_resources', '_distutils_hack',
+    # dropping the sqlite3 and tkinter extension modules also drops their
+    # heavy native deps (conda's libsqlite3 pulls a 39 MB ICU; tcl/tk):
+    'sqlite3', '_sqlite3*', '_tkinter*', 'tcl*', 'tk86*', 'sqlite3*',
+)
+
+
 def bundle_python_home(prefix, outdir):
     """Copy conda's lib/pythonX.Y/ (stdlib, lib-dynload, site-packages with
     _cffi_backend) so PYTHONHOME=outdir works standalone. Without this, the
@@ -57,29 +71,52 @@ def bundle_python_home(prefix, outdir):
     pick up an unrelated Python installation found elsewhere on the host.
     """
     pylibdir = next((prefix / 'lib').glob('python3.*'))
-    ignore = shutil.ignore_patterns('__pycache__', '*.pyc')
+    ignore = shutil.ignore_patterns(*PYTHON_HOME_PRUNE)
     shutil.copytree(pylibdir, outdir / 'lib' / pylibdir.name, ignore=ignore, dirs_exist_ok=True)
 
 
+def bundled_extensions(outdir):
+    """Compiled extension modules of the bundled python home; they have
+    their own shared-lib dependencies (e.g. _cffi_backend -> libffi) that
+    must be bundled too -- walking only the main binary's deps misses them.
+    """
+    yield from (outdir / 'lib').rglob('*.so')
+    yield from (outdir / 'lib').rglob('*.so.*')
+    yield from (outdir / 'lib').rglob('*.dylib')
+
+
+def _elf_needed(path):
+    out = subprocess.run(
+        ['readelf', '-d', str(path)], capture_output=True, text=True
+    ).stdout
+    return re.findall(r'\(NEEDED\)[^\[]*\[([^\]]+)\]', out)
+
+
 def relocate_linux(prefix, outdir):
+    # Bundled libs live in outdir/lib: that's where the stdlib's extension
+    # modules already look (their conda RUNPATH is $ORIGIN/../..), and the
+    # binary is pointed there with an explicit rpath.
     outdir.mkdir(parents=True, exist_ok=True)
+    libdir = outdir / 'lib'
+    libdir.mkdir(exist_ok=True)
     binary = prefix / 'bin' / 'clingo'
     shutil.copy2(binary, outdir / 'clingo')
-    needed = subprocess.run(
-        ['ldd', str(binary)], check=True, capture_output=True, text=True
-    ).stdout
-    for line in needed.splitlines():
-        line = line.strip()
-        if '=>' not in line:
-            continue
-        libname, _, rest = line.partition('=>')
-        libpath = rest.strip().split(' ')[0]
-        if libpath and str(prefix) in libpath:
-            # only the conda-provided libs need bundling; system libs
-            # (libc, libpthread, libm...) are assumed present everywhere.
-            shutil.copy2(libpath, outdir / os.path.basename(libpath))
-    sh('patchelf', '--set-rpath', '$ORIGIN', str(outdir / 'clingo'))
     bundle_python_home(prefix, outdir)
+    todo = [outdir / 'clingo', *bundled_extensions(outdir)]
+    seen = set()
+    while todo:
+        img = todo.pop()
+        for name in _elf_needed(img):
+            if name in seen:
+                continue
+            seen.add(name)
+            src = prefix / 'lib' / name
+            # only conda-provided libs need bundling; system libs
+            # (libc, libpthread, libm...) are not under the prefix.
+            if src.exists():
+                shutil.copy2(src, libdir / name)
+                todo.append(libdir / name)
+    sh('patchelf', '--set-rpath', '$ORIGIN/lib', str(outdir / 'clingo'))
 
 
 def _macho_deps(path):
@@ -93,13 +130,18 @@ def relocate_macos(prefix, outdir):
     # conda-forge mach-o binaries reference their private libs as
     # @rpath/libfoo.dylib (or @loader_path/), with an LC_RPATH pointing at
     # the env's lib/ dir -- which stops existing once relocated. Copy every
-    # such dependency (transitively) next to the binary and add
-    # @loader_path to its rpath so they resolve in-place. Anything else
+    # such dependency (transitively) into outdir/lib: the bundled stdlib's
+    # extension modules already resolve @rpath there (@loader_path/../..),
+    # and the binary gets an explicit rpath to it. Anything else
     # (absolute /usr/lib etc.) is a system lib, left alone.
     outdir.mkdir(parents=True, exist_ok=True)
+    libdir = outdir / 'lib'
+    libdir.mkdir(exist_ok=True)
     binary = prefix / 'bin' / 'clingo'
     shutil.copy2(binary, outdir / 'clingo')
-    todo, seen = [outdir / 'clingo'], set()
+    bundle_python_home(prefix, outdir)
+    todo = [outdir / 'clingo', *bundled_extensions(outdir)]
+    seen, modified = set(), {outdir / 'clingo'}
     while todo:
         img = todo.pop()
         for dep in _macho_deps(img):
@@ -108,6 +150,7 @@ def relocate_macos(prefix, outdir):
             elif dep.startswith(str(prefix)):
                 name = os.path.basename(dep)
                 sh('install_name_tool', '-change', dep, f'@rpath/{name}', str(img))
+                modified.add(img)
             else:
                 continue
             if name in seen:
@@ -115,15 +158,16 @@ def relocate_macos(prefix, outdir):
             seen.add(name)
             src = prefix / 'lib' / name
             if src.exists():
-                shutil.copy2(src, outdir / name)
-                todo.append(outdir / name)
-    sh('install_name_tool', '-add_rpath', '@loader_path', str(outdir / 'clingo'))
+                dst = libdir / name
+                shutil.copy2(src, dst)
+                todo.append(dst)
+                modified.add(dst)
+    sh('install_name_tool', '-add_rpath', '@loader_path/lib', str(outdir / 'clingo'))
     # modifying a mach-o invalidates its code signature, and arm64 macOS
     # refuses to run unsigned binaries -- re-sign everything ad-hoc.
-    for f in ['clingo', *seen]:
-        if (outdir / f).exists():
-            sh('codesign', '--force', '--sign', '-', str(outdir / f))
-    bundle_python_home(prefix, outdir)
+    for f in modified:
+        if f.exists():
+            sh('codesign', '--force', '--sign', '-', str(f))
 
 
 def relocate_windows(prefix, outdir):
@@ -147,7 +191,7 @@ def relocate_windows(prefix, outdir):
     python_dll = next(prefix.glob('python3*.dll'))
     shutil.copy2(python_dll, outdir / python_dll.name)
 
-    ignore = shutil.ignore_patterns('__pycache__', '*.pyc')
+    ignore = shutil.ignore_patterns(*PYTHON_HOME_PRUNE)
     shutil.copytree(prefix / 'Lib', outdir / 'Lib', ignore=ignore, dirs_exist_ok=True)
     shutil.copytree(prefix / 'DLLs', outdir / 'DLLs', ignore=ignore, dirs_exist_ok=True)
 

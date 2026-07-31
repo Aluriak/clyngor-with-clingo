@@ -28,7 +28,16 @@ release, and made relocatable (no conda environment needed at runtime) by
 This must run once per OS (see `.github/workflows/build-binaries.yml`, which
 does exactly that on GitHub-hosted Linux/macOS/Windows runners and
 smoke-tests each binary natively, including a `#script (python)` block).
-Note: the conda-forge build has Python scripting support but not Lua.
+Notes on the fetched binaries:
+
+- Python scripting (`#script (python)`) is supported, with the needed
+  Python runtime bundled alongside the binary; Lua is not.
+- `sqlite3` and `tkinter` are pruned from the bundled Python runtime
+  (their native deps are huge and pointless inside an ASP solver).
+- Releases publish **one platform-tagged wheel per OS/arch** (Linux
+  x86_64, macOS arm64 + x86_64, Windows x86_64), no sdist -- each wheel
+  stays under PyPI's size limit and users only download their own OS's
+  binaries.
 
 - Script `retrieve-clingo.sh <clingo version>` / `put-clingo-version.sh <clingo version>`
   are kept only for rebuilding older versions (**<= 5.4.0**), back when
