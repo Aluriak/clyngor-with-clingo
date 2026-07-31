@@ -82,22 +82,47 @@ def relocate_linux(prefix, outdir):
     bundle_python_home(prefix, outdir)
 
 
+def _macho_deps(path):
+    out = subprocess.run(
+        ['otool', '-L', str(path)], check=True, capture_output=True, text=True
+    ).stdout
+    return [line.strip().split(' ')[0] for line in out.splitlines()[1:]]
+
+
 def relocate_macos(prefix, outdir):
+    # conda-forge mach-o binaries reference their private libs as
+    # @rpath/libfoo.dylib (or @loader_path/), with an LC_RPATH pointing at
+    # the env's lib/ dir -- which stops existing once relocated. Copy every
+    # such dependency (transitively) next to the binary and add
+    # @loader_path to its rpath so they resolve in-place. Anything else
+    # (absolute /usr/lib etc.) is a system lib, left alone.
     outdir.mkdir(parents=True, exist_ok=True)
     binary = prefix / 'bin' / 'clingo'
     shutil.copy2(binary, outdir / 'clingo')
-    needed = subprocess.run(
-        ['otool', '-L', str(binary)], check=True, capture_output=True, text=True
-    ).stdout
-    changes = []
-    for line in needed.splitlines()[1:]:
-        libpath = line.strip().split(' ')[0]
-        if libpath.startswith(str(prefix)):
-            libname = os.path.basename(libpath)
-            shutil.copy2(prefix / libpath[len(str(prefix)) + 1:], outdir / libname)
-            changes += ['-change', libpath, f'@loader_path/{libname}']
-    if changes:
-        sh('install_name_tool', *changes, str(outdir / 'clingo'))
+    todo, seen = [outdir / 'clingo'], set()
+    while todo:
+        img = todo.pop()
+        for dep in _macho_deps(img):
+            if dep.startswith('@rpath/') or dep.startswith('@loader_path/'):
+                name = os.path.basename(dep)
+            elif dep.startswith(str(prefix)):
+                name = os.path.basename(dep)
+                sh('install_name_tool', '-change', dep, f'@rpath/{name}', str(img))
+            else:
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            src = prefix / 'lib' / name
+            if src.exists():
+                shutil.copy2(src, outdir / name)
+                todo.append(outdir / name)
+    sh('install_name_tool', '-add_rpath', '@loader_path', str(outdir / 'clingo'))
+    # modifying a mach-o invalidates its code signature, and arm64 macOS
+    # refuses to run unsigned binaries -- re-sign everything ad-hoc.
+    for f in ['clingo', *seen]:
+        if (outdir / f).exists():
+            sh('codesign', '--force', '--sign', '-', str(outdir / f))
     bundle_python_home(prefix, outdir)
 
 
