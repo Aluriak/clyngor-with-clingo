@@ -15,7 +15,9 @@ import os
 import re
 import sys
 import glob
+import venv
 import shutil
+import tempfile
 import platform
 import subprocess
 from pathlib import Path
@@ -204,15 +206,34 @@ def relocate_windows(prefix, outdir):
 def runtime_env(outdir):
     """The env clingo needs at runtime: same as what run_clingo() in
     clyngor_with_clingo/__init__.py sets up, so the smoke test here
-    actually exercises the real runtime path."""
+    actually exercises the real runtime path. Keep the two in step."""
     env = dict(os.environ)
     env.pop('PYTHONPATH', None)
     if platform.system() in ('Linux', 'Darwin'):
         env['PYTHONHOME'] = str(outdir)
+        site_packages = sorted(outdir.glob('lib/python3.*/site-packages'))
+        if site_packages:
+            env['PYTHONPATH'] = str(site_packages[0])
     return env
 
 
 def smoke_test(outdir, exe):
+    """Run an embedded #script (python), plain and from inside a virtualenv.
+
+    The virtualenv case is not paranoia: 5.8.0 passed this smoke test and
+    was still broken for anyone who had installed it the normal way, into
+    an activated virtualenv. The embedded interpreter came up without its
+    own site-packages on sys.path, so _cffi_backend was missing and every
+    #script (python) block silently produced no model.
+    """
+    _run_smoke(outdir, exe)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        venv.create(tmpdir, with_pip=False)
+        scripts = 'Scripts' if platform.system() == 'Windows' else 'bin'
+        _run_smoke(outdir, exe, activated_venv=Path(tmpdir) / scripts)
+
+
+def _run_smoke(outdir, exe, activated_venv=None):
     script = ROOT / '_smoke_test.lp'
     script.write_text(
         '#script (python)\n'
@@ -222,17 +243,23 @@ def smoke_test(outdir, exe):
         '#end.\n'
         'a. b :- a.\n'
     )
+    env = runtime_env(outdir)
+    context = ''
+    if activated_venv:  # what `source venv/bin/activate` amounts to here
+        env['VIRTUAL_ENV'] = str(activated_venv.parent)
+        env['PATH'] = str(activated_venv) + os.pathsep + env.get('PATH', '')
+        context = ' (with a virtualenv activated)'
     out = subprocess.run(
         [str(outdir / exe), str(script), '0'],
-        capture_output=True, text=True, env=runtime_env(outdir),
+        capture_output=True, text=True, env=env,
     )
     script.unlink()
     if 'SMOKE_TEST_MODEL: a b' not in out.stdout:
         raise SystemExit(
-            f"smoke test failed for {outdir / exe}\n"
+            f"smoke test failed for {outdir / exe}{context}\n"
             f"stdout:\n{out.stdout}\nstderr:\n{out.stderr}"
         )
-    print(f"smoke test OK for {outdir / exe}", file=sys.stderr)
+    print(f"smoke test OK for {outdir / exe}{context}", file=sys.stderr)
 
 
 def main():

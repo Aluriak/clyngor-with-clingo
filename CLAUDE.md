@@ -6,7 +6,11 @@ clyngor-with-clingo`. The python code is ~30 lines; **the release pipeline
 is the whole product**, and it is where every bug has been.
 
 Package version tracks the clingo version it ships (5.8.0 ships clingo
-5.8.0).
+5.8.0). **Keep that equality**: to re-release the same clingo, add a PEP
+440 post segment (`5.8.0.post1`, as `5.3.post0` already did) rather than
+bumping to 5.8.1, which would claim a clingo that isn't in the wheel. The
+publish workflow strips that segment to know what to fetch from
+conda-forge.
 
 ## Where the binaries come from
 
@@ -38,6 +42,15 @@ smoke-tests each binary natively with an embedded `#script (python)`.
   AWS CLI's bundled python and died on `_cffi_backend`.
 - **Walk deps from the extension modules too**, not only from the binary:
   `_cffi_backend` pulls `libffi`, which the binary itself never references.
+- **Name the bundled `site-packages` in `PYTHONPATH`**, don't just clear it
+  and trust `site` to find it. This is what 5.8.0 shipped broken: with the
+  package installed in a virtualenv *and that virtualenv activated* — the
+  normal way to use it — the embedded interpreter came up with no
+  site-packages on `sys.path` at all, so `_cffi_backend` was missing and
+  every `#script (python)` block silently yielded no model. `PYTHONHOME`
+  alone was not enough. The smoke test now runs a second time with a
+  virtualenv on `PATH`, which is the only reason a CI-green 5.8.0 could
+  reach PyPI broken.
 - **Testing relocation requires actually removing the source conda env.**
   With it still on disk at its original path, a "relocated" binary silently
   resolves back to it and every test passes for the wrong reason.
