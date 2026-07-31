@@ -181,7 +181,8 @@ def main():
         relocate_linux(prefix, outdir)
         smoke_test(outdir, 'clingo')
     elif system == 'Darwin':
-        outdir = ROOT / 'clyngor_with_clingo' / 'bin' / 'macos'
+        arch = 'arm64' if platform.machine() == 'arm64' else 'x64'
+        outdir = ROOT / 'clyngor_with_clingo' / 'bin' / f'macos-{arch}'
         relocate_macos(prefix, outdir)
         smoke_test(outdir, 'clingo')
     elif system == 'Windows':

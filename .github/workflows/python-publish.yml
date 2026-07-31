@@ -52,8 +52,13 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: clingo-binaries-macos
-          path: clyngor_with_clingo/bin/macos/
+          name: clingo-binaries-macos-arm64
+          path: clyngor_with_clingo/bin/macos-arm64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: clingo-binaries-macos-x64
+          path: clyngor_with_clingo/bin/macos-x64/
 
       - uses: actions/download-artifact@v4
         with:
@@ -65,9 +70,12 @@ jobs:
         # binaries get published as v5.4.0 (see issue #5).
         run: |
           set -e
-          chmod +x clyngor_with_clingo/bin/linux/clingo clyngor_with_clingo/bin/macos/clingo
+          chmod +x clyngor_with_clingo/bin/linux/clingo \
+                   clyngor_with_clingo/bin/macos-arm64/clingo \
+                   clyngor_with_clingo/bin/macos-x64/clingo
           for f in clyngor_with_clingo/bin/linux/clingo \
-                   clyngor_with_clingo/bin/macos/clingo \
+                   clyngor_with_clingo/bin/macos-arm64/clingo \
+                   clyngor_with_clingo/bin/macos-x64/clingo \
                    clyngor_with_clingo/bin/win/clingo.exe; do
             size=$(stat -c%s "$f")
             echo "$f: $size bytes"

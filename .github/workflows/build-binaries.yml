@@ -30,8 +30,15 @@ jobs:
         include:
           - os: ubuntu-latest
             platform_dir: linux
-          - os: macos-13
-            platform_dir: macos
+          # macos-13 (the last plain x86_64 macOS label) was retired by
+          # GitHub on 2025-12-04 -- jobs targeting it queue forever. Modern
+          # macOS labels are arm64; x86_64 lives on as macos-*-intel until
+          # fall 2027. Build both: Apple Silicon natively, Intel for older
+          # Macs (and as a Rosetta fallback).
+          - os: macos-latest
+            platform_dir: macos-arm64
+          - os: macos-15-intel
+            platform_dir: macos-x64
           - os: windows-latest
             platform_dir: win
 

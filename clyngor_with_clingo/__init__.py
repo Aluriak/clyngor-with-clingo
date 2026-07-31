@@ -15,7 +15,8 @@ system = platform.system()
 if platform.system() == 'Linux':
     binpath = 'linux/clingo'
 elif platform.system() == 'Darwin':
-    binpath = 'macos/clingo'
+    arch = 'arm64' if platform.machine() == 'arm64' else 'x64'
+    binpath = f'macos-{arch}/clingo'
 elif platform.system() == 'Windows':
     binpath = 'win/clingo.exe'
 else:
